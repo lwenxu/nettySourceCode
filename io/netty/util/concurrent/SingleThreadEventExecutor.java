@@ -281,9 +281,7 @@ public abstract class SingleThreadEventExecutor extends AbstractEventExecutor {
         return taskQueue.peek();
     }
 
-    /**
-     * @see {@link Queue#isEmpty()}
-     */
+    // 返回 taskQueue 是否为空
     protected boolean hasTasks() {
         assert inEventLoop();
         return !taskQueue.isEmpty();
@@ -345,6 +343,7 @@ public abstract class SingleThreadEventExecutor extends AbstractEventExecutor {
             return false;
         }
 
+        // 这个循环就是用来循环任务队列中的所有任务
         for (;;) {
             try {
                 task.run();
@@ -352,7 +351,7 @@ public abstract class SingleThreadEventExecutor extends AbstractEventExecutor {
                 logger.warn("A task raised an exception.", t);
             }
 
-            task = pollTask();
+            task = pollTask(); // 循环条件
             if (task == null) {
                 lastExecutionTime = ScheduledFutureTask.nanoTime();
                 return true;

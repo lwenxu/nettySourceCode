@@ -105,6 +105,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
      * the select method and the select method will block for that time unless
      * waken up.
      */
+    // select 方法是否阻塞
     private final AtomicBoolean wakenUp = new AtomicBoolean();
 
     private volatile int ioRatio = 50;
@@ -299,44 +300,37 @@ public final class NioEventLoop extends SingleThreadEventLoop {
         logger.info("Migrated " + nChannels + " channel(s) to the new Selector.");
     }
 
+
+    /**
+     *'wakenUp.compareAndSet(false, true)' 一般都会在 select.wakeUp() 之前执行
+     * 因为这样可以减少 select.wakeUp() 调用的次数，select.wakeUp() 调用是一个代价
+     * 很高的操作
+     * 注意：如果说我们过早的把 wakenUp 设置为 true，可能导致线程的竞争问题，过早设置的情形如下：
+         1) Selector is waken up between 'wakenUp.set(false)' and
+            'selector.select(...)'. (BAD)
+         2) Selector is waken up between 'selector.select(...)' and
+            'if (wakenUp.get()) { ... }'. (OK)
+     在第一种情况中 wakenUp 被设置为 true 则 select 会立刻被唤醒直到 wakenUp 再次被设置为 false
+     但是wakenUp.compareAndSet(false, true)会失败，并且导致所有希望唤醒他的线程都会失败导致
+     select 进行不必要的休眠
+
+     为了解决这个问题我们是在 wakenUp 为 true 的时候再次对 select 进行唤醒。
+     */
+
     @Override
     protected void run() {
         for (;;) {
+            // 获取之前的线程状态，并让 select 阻塞
             boolean oldWakenUp = wakenUp.getAndSet(false);
             try {
+                // 有任务在线程创建之后直接开始 select
                 if (hasTasks()) {
-                    selectNow();
+                    selectNow(); //直接调用了 select 的 selectNow 然后再次唤醒同下面的代码
+                // 没有任务
                 } else {
+                    // 自旋进行等待可进行 select 操作
                     select(oldWakenUp);
-
-                    // 'wakenUp.compareAndSet(false, true)' is always evaluated
-                    // before calling 'selector.wakeup()' to reduce the wake-up
-                    // overhead. (Selector.wakeup() is an expensive operation.)
-                    //
-                    // However, there is a race condition in this approach.
-                    // The race condition is triggered when 'wakenUp' is set to
-                    // true too early.
-                    //
-                    // 'wakenUp' is set to true too early if:
-                    // 1) Selector is waken up between 'wakenUp.set(false)' and
-                    //    'selector.select(...)'. (BAD)
-                    // 2) Selector is waken up between 'selector.select(...)' and
-                    //    'if (wakenUp.get()) { ... }'. (OK)
-                    //
-                    // In the first case, 'wakenUp' is set to true and the
-                    // following 'selector.select(...)' will wake up immediately.
-                    // Until 'wakenUp' is set to false again in the next round,
-                    // 'wakenUp.compareAndSet(false, true)' will fail, and therefore
-                    // any attempt to wake up the Selector will fail, too, causing
-                    // the following 'selector.select(...)' call to block
-                    // unnecessarily.
-                    //
-                    // To fix this problem, we wake up the selector again if wakenUp
-                    // is true immediately after selector.select(...).
-                    // It is inefficient in that it wakes up the selector for both
-                    // the first case (BAD - wake-up required) and the second case
-                    // (OK - no wake-up required).
-
+                    // 再次唤醒，解决并发问题
                     if (wakenUp.get()) {
                         selector.wakeup();
                     }
@@ -345,14 +339,13 @@ public final class NioEventLoop extends SingleThreadEventLoop {
                 cancelledKeys = 0;
                 needsToSelectAgain = false;
                 final int ioRatio = this.ioRatio;
+                // 都是处理 selected 的通道的数据，并执行所有的任务，只是在 runAllTasks 传的参数不同
                 if (ioRatio == 100) {
                     processSelectedKeys();
                     runAllTasks();
                 } else {
                     final long ioStartTime = System.nanoTime();
-
                     processSelectedKeys();
-
                     final long ioTime = System.nanoTime() - ioStartTime;
                     runAllTasks(ioTime * (100 - ioRatio) / ioRatio);
                 }
@@ -365,7 +358,6 @@ public final class NioEventLoop extends SingleThreadEventLoop {
                 }
             } catch (Throwable t) {
                 logger.warn("Unexpected exception in the selector loop.", t);
-
                 // Prevent possible consecutive immediate failures that lead to
                 // excessive CPU consumption.
                 try {
@@ -596,13 +588,21 @@ public final class NioEventLoop extends SingleThreadEventLoop {
         try {
             selector.selectNow();
         } finally {
-            // restore wakup state if needed
+            // 解决并发问题
             if (wakenUp.get()) {
                 selector.wakeup();
             }
         }
     }
 
+    /**
+     * 这个方法主要干的事情：
+     * 1、如果不需要等待就直接 select
+     * 2、需要等待则等一个超时时间再去 select
+     * 这个过程是不停进行的也就是死循环直达有任务可进行 select 时 select 完毕退出循环
+     * @param oldWakenUp
+     * @throws IOException
+     */
     private void select(boolean oldWakenUp) throws IOException {
         Selector selector = this.selector;
         try {
@@ -610,6 +610,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
             long currentTimeNanos = System.nanoTime();
             long selectDeadLineNanos = currentTimeNanos + delayNanos(currentTimeNanos);
             for (;;) {
+                // 不用等待进行一次 select 操作
                 long timeoutMillis = (selectDeadLineNanos - currentTimeNanos + 500000L) / 1000000L;
                 if (timeoutMillis <= 0) {
                     if (selectCnt == 0) {
@@ -618,7 +619,7 @@ public final class NioEventLoop extends SingleThreadEventLoop {
                     }
                     break;
                 }
-
+                // 等一个超时再去选择
                 int selectedKeys = selector.select(timeoutMillis);
                 selectCnt ++;
 

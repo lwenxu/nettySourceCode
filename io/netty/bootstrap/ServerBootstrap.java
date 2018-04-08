@@ -45,9 +45,11 @@ import java.util.concurrent.TimeUnit;
 public final class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, ServerChannel> {
 
     private static final InternalLogger logger = InternalLoggerFactory.getInstance(ServerBootstrap.class);
-
+    // options 选项
     private final Map<ChannelOption<?>, Object> childOptions = new LinkedHashMap<ChannelOption<?>, Object>();
+    // 属性
     private final Map<AttributeKey<?>, Object> childAttrs = new LinkedHashMap<AttributeKey<?>, Object>();
+    
     private volatile EventLoopGroup childGroup;
     private volatile ChannelHandler childHandler;
 
