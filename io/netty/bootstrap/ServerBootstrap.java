@@ -49,8 +49,9 @@ public final class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, Se
     private final Map<ChannelOption<?>, Object> childOptions = new LinkedHashMap<ChannelOption<?>, Object>();
     // 属性
     private final Map<AttributeKey<?>, Object> childAttrs = new LinkedHashMap<AttributeKey<?>, Object>();
-    
+    // worker 线程池，为啥没有 boss ？ 待会说
     private volatile EventLoopGroup childGroup;
+    // handler
     private volatile ChannelHandler childHandler;
 
     public ServerBootstrap() { }
@@ -81,6 +82,7 @@ public final class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, Se
      * {@link Channel}'s.
      */
     public ServerBootstrap group(EventLoopGroup parentGroup, EventLoopGroup childGroup) {
+        // 初始化 boss
         super.group(parentGroup);
         if (childGroup == null) {
             throw new NullPointerException("childGroup");
@@ -88,6 +90,7 @@ public final class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, Se
         if (this.childGroup != null) {
             throw new IllegalStateException("childGroup set already");
         }
+        // 初始化 worker
         this.childGroup = childGroup;
         return this;
     }
