@@ -337,6 +337,16 @@ public abstract class AbstractNioChannel extends AbstractChannel {
         boolean selected = false;
         for (;;) {
             try {
+                // javaChannel 就是之前 new 出来的 SocketChannelImpl 也就是我们一直在说的 channel
+                // 其中的 selector 就是 KQueueSelectorImpl
+                /**
+                 * 通过回溯NioEventLoop到NioEventLoopGroup构造函数中，
+                 * 我们知道这里的provider是通过调用SelectorProvider.provider()产生的new KQueueSelectorProvider() 对象，
+                 * 该类KQueueSelectorProvider中的openSelector()方法的代码如:
+                 * public AbstractSelector openSelector() throws IOException {
+                     return new KQueueSelectorImpl(this);
+                    }
+                 */
                 selectionKey = javaChannel().register(eventLoop().selector, 0, this);
                 return;
             } catch (CancelledKeyException e) {

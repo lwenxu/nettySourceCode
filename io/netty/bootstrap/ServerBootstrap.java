@@ -151,13 +151,20 @@ public final class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, Se
         return childGroup;
     }
 
+
+    /**
+     * 对父类的 new 出来的 channel（NioServerSocketChannel） 进行初始化
+     * @param channel
+     * @throws Exception
+     */
     @Override
     void init(Channel channel) throws Exception {
+        // 初始化 channel 中的 options
         final Map<ChannelOption<?>, Object> options = options();
         synchronized (options) {
             channel.config().setOptions(options);
         }
-
+        // 初始化 channel 的 attrs
         final Map<AttributeKey<?>, Object> attrs = attrs();
         synchronized (attrs) {
             for (Entry<AttributeKey<?>, Object> e: attrs.entrySet()) {
@@ -167,6 +174,7 @@ public final class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, Se
             }
         }
 
+        // new 出 pipeline 并且添加了 handler
         ChannelPipeline p = channel.pipeline();
         if (handler() != null) {
             p.addLast(handler());
@@ -183,6 +191,10 @@ public final class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, Se
             currentChildAttrs = childAttrs.entrySet().toArray(newAttrArray(childAttrs.size()));
         }
 
+        // 添加了一个 ServerBootstrapAcceptor 这个 handler 的作用就是去添加我们自定义的 handler
+        // 也就是这里的 currentChildHandler
+        // ServerBootstrapAcceptor 可以看到他是继承自 ChannelInboundHandlerAdapter 然后重写了很多方法
+        // 他的主要作用就是接入器，专门接受新请求，把新的请求扔给某个事件循环器
         p.addLast(new ChannelInitializer<Channel>() {
             @Override
             public void initChannel(Channel ch) throws Exception {
@@ -222,9 +234,7 @@ public final class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, Se
         private final Entry<ChannelOption<?>, Object>[] childOptions;
         private final Entry<AttributeKey<?>, Object>[] childAttrs;
 
-        ServerBootstrapAcceptor(
-                EventLoopGroup childGroup, ChannelHandler childHandler,
-                Entry<ChannelOption<?>, Object>[] childOptions, Entry<AttributeKey<?>, Object>[] childAttrs) {
+        ServerBootstrapAcceptor(EventLoopGroup childGroup, ChannelHandler childHandler, Entry<ChannelOption<?>, Object>[] childOptions, Entry<AttributeKey<?>, Object>[] childAttrs) {
             this.childGroup = childGroup;
             this.childHandler = childHandler;
             this.childOptions = childOptions;
@@ -234,10 +244,11 @@ public final class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, Se
         @Override
         @SuppressWarnings("unchecked")
         public void channelRead(ChannelHandlerContext ctx, Object msg) {
+            // 把客户端过来的连接转成 channel
             final Channel child = (Channel) msg;
-
+            // 添加用户自定义逻辑 childChannel
             child.pipeline().addLast(childHandler);
-
+            // 设置 options
             for (Entry<ChannelOption<?>, Object> e: childOptions) {
                 try {
                     if (!child.config().setOption((ChannelOption<Object>) e.getKey(), e.getValue())) {
@@ -247,12 +258,13 @@ public final class ServerBootstrap extends AbstractBootstrap<ServerBootstrap, Se
                     logger.warn("Failed to set a channel option: " + child, t);
                 }
             }
-
+            // 设置 attrs
             for (Entry<AttributeKey<?>, Object> e: childAttrs) {
                 child.attr((AttributeKey<Object>) e.getKey()).set(e.getValue());
             }
 
             try {
+                // 注册 channel 到 worker 线程池，操作完成关闭 channel
                 childGroup.register(child).addListener(new ChannelFutureListener() {
                     @Override
                     public void operationComplete(ChannelFuture future) throws Exception {

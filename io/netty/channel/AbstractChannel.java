@@ -391,6 +391,11 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
             return remoteAddress0();
         }
 
+        /**
+         * 真正调用的 register 方法，，就是将 channel 注册到 EventLoop 上的方法
+         * @param eventLoop
+         * @param promise
+         */
         @Override
         public final void register(EventLoop eventLoop, final ChannelPromise promise) {
             if (eventLoop == null) {
@@ -401,13 +406,13 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
                 return;
             }
             if (!isCompatible(eventLoop)) {
-                promise.setFailure(
-                        new IllegalStateException("incompatible event loop type: " + eventLoop.getClass().getName()));
+                promise.setFailure(new IllegalStateException("incompatible event loop type: " + eventLoop.getClass().getName()));
                 return;
             }
 
             AbstractChannel.this.eventLoop = eventLoop;
-
+            // 判断当前线程是否为该EventLoop中拥有的线程，如果是，则直接注册
+            // 如果不是，则创建一个一次性的线程用来注册
             if (eventLoop.inEventLoop()) {
                 register0(promise);
             } else {
@@ -419,9 +424,7 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
                         }
                     });
                 } catch (Throwable t) {
-                    logger.warn(
-                            "Force-closing a channel whose registration task was not accepted by an event loop: {}",
-                            AbstractChannel.this, t);
+                    logger.warn("Force-closing a channel whose registration task was not accepted by an event loop: {}", AbstractChannel.this, t);
                     closeForcibly();
                     closeFuture.setClosed();
                     safeSetFailure(promise, t);
@@ -436,10 +439,10 @@ public abstract class AbstractChannel extends DefaultAttributeMap implements Cha
                 if (!promise.setUncancellable() || !ensureOpen(promise)) {
                     return;
                 }
-                doRegister();
+                doRegister();// 核心方法 1  真正实现了 channel 和 selector 之间的注册
                 registered = true;
                 safeSetSuccess(promise);
-                pipeline.fireChannelRegistered();
+                pipeline.fireChannelRegistered(); // 核心方法 2     调用我们自己写的Handler
                 if (isActive()) {
                     pipeline.fireChannelActive();
                 }

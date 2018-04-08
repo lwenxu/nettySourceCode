@@ -442,6 +442,7 @@ abstract class AbstractChannelHandlerContext extends DefaultAttributeMap impleme
             safeExecute(executor, new OneTimeTask() {
                 @Override
                 public void run() {
+                    // 最后执行 bind 操作的方法
                     next.invokeBind(localAddress, promise);
                 }
             }, promise, null);

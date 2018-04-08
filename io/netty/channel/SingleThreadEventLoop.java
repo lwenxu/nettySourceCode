@@ -48,6 +48,12 @@ public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor im
         return register(channel, new DefaultChannelPromise(channel, this));
     }
 
+    /**
+     * 将 channel 注册到一个 EventLoop 上面
+     * @param channel
+     * @param promise
+     * @return
+     */
     @Override
     public ChannelFuture register(final Channel channel, final ChannelPromise promise) {
         if (channel == null) {
@@ -56,7 +62,7 @@ public abstract class SingleThreadEventLoop extends SingleThreadEventExecutor im
         if (promise == null) {
             throw new NullPointerException("promise");
         }
-
+        // unsafe 操作就是获取 NioMessageUnsafe 对象，然后调用 NioMessageUnsafe 的 register 方法
         channel.unsafe().register(this, promise);
         return promise;
     }

@@ -803,6 +803,11 @@ final class DefaultChannelPipeline implements ChannelPipeline {
         return this;
     }
 
+    /**
+     * 直接调用了 tail 的 bind 方法 tail 是一个 handlerContext
+     * @param localAddress
+     * @return
+     */
     @Override
     public ChannelFuture bind(SocketAddress localAddress) {
         return tail.bind(localAddress);

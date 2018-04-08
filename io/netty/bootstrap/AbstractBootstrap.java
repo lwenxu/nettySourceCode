@@ -259,8 +259,12 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
     }
 
     /**
-     * Create a new {@link Channel} and bind it.
+     * 所有的 bind 方法的都干了差不多的事情
+     * 1、validate 验证 boss worker 和 channel 是否设置了
+     * 2、绑定端口
      */
+
+
     public ChannelFuture bind(SocketAddress localAddress) {
         validate();
         if (localAddress == null) {
@@ -269,20 +273,28 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
         return doBind(localAddress);
     }
 
+
     private ChannelFuture doBind(final SocketAddress localAddress) {
+        // 获取 Future 对象
         final ChannelFuture regFuture = initAndRegister();
+        // 通过 Future 获取 channel
         final Channel channel = regFuture.channel();
+
+        // 注册过程出现异常返回 Future
         if (regFuture.cause() != null) {
             return regFuture;
         }
 
         final ChannelPromise promise;
+        // 注册过程正常结束，创建 promise 这个是干嘛的？？？
         if (regFuture.isDone()) {
             promise = channel.newPromise();
+            // 真正的做绑定操作
             doBind0(regFuture, channel, localAddress, promise);
         } else {
             // Registration future is almost always fulfilled already, but just in case it's not.
             promise = new PendingRegistrationPromise(channel);
+            // 异步等待 Future 注册完成，做绑定操作
             regFuture.addListener(new ChannelFutureListener() {
                 @Override
                 public void operationComplete(ChannelFuture future) throws Exception {
@@ -294,16 +306,22 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
         return promise;
     }
 
+    // 初始化(创建) 和 注册 返回 Future 对象
     final ChannelFuture initAndRegister() {
+        // 返回的就是 NioServerSocketChannel 对象  也就是我们在使用 channel() 方法传入的内容
         final Channel channel = channelFactory().newChannel();
         try {
+            // 对 channel 初始化，在子类中实现
             init(channel);
         } catch (Throwable t) {
             channel.unsafe().closeForcibly();
             // as the Channel is not registered yet we need to force the usage of the GlobalEventExecutor
             return new DefaultChannelPromise(channel, GlobalEventExecutor.INSTANCE).setFailure(t);
         }
-
+        // 注册 channel 这个注册最后执行的是 chooser 的 next()方法中返回的 EventLoop 对象的 register() 方法
+        // 所以说昨天分析的chooser 就是取 children 数组中的一个 EventLoop ，还记得那里面有两个 chooser 吗？
+        // 那两个 chooser 就是选择线程求余数的方式不同
+        // 最后总结一下就是这个 channel 被注册到了 Worker 线程池中的某个线程，具体由 chooser 实现
         ChannelFuture regFuture = group().register(channel);
         if (regFuture.cause() != null) {
             if (channel.isRegistered()) {
@@ -333,10 +351,15 @@ public abstract class AbstractBootstrap<B extends AbstractBootstrap<B, C>, C ext
 
         // This method is invoked before channelRegistered() is triggered.  Give user handlers a chance to set up
         // the pipeline in its channelRegistered() implementation.
+        // 提交了一个绑定任务到 eventLoop
+        // 在eventLoop 中对于新的任务的策略是：
+        // 判断当前线程是否为该NioEventLoop所关联的线程，如果是，则添加任务到任务队列中
+        // 如果不是，则先启动线程，然后添加任务到任务队列中去
         channel.eventLoop().execute(new Runnable() {
             @Override
             public void run() {
                 if (regFuture.isSuccess()) {
+                    // bind 的实现是在 AbstractChannel 里面
                     channel.bind(localAddress, promise).addListener(ChannelFutureListener.CLOSE_ON_FAILURE);
                 } else {
                     promise.setFailure(regFuture.cause());
