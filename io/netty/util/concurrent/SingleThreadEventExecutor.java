@@ -843,11 +843,11 @@ public abstract class SingleThreadEventExecutor extends AbstractEventExecutor {
     }
 
     private void startThread() {
+        // 这一个 if 判断就是为了在线程刚创建的时候起作用，也就是线程刚创建才能进到这里
         if (STATE_UPDATER.get(this) == ST_NOT_STARTED) {
             if (STATE_UPDATER.compareAndSet(this, ST_NOT_STARTED, ST_STARTED)) {
-                delayedTaskQueue.add(new ScheduledFutureTask<Void>(
-                        this, delayedTaskQueue, Executors.<Void>callable(new PurgeTask(), null),
-                        ScheduledFutureTask.deadlineNanos(SCHEDULE_PURGE_INTERVAL), -SCHEDULE_PURGE_INTERVAL));
+                delayedTaskQueue.add(new ScheduledFutureTask<Void>(this, delayedTaskQueue, Executors.<Void>callable(new PurgeTask(), null), ScheduledFutureTask.deadlineNanos(SCHEDULE_PURGE_INTERVAL), -SCHEDULE_PURGE_INTERVAL));
+                // 线程启动了
                 thread.start();
             }
         }
